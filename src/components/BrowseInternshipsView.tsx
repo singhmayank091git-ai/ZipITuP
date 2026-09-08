@@ -12,6 +12,8 @@ interface RealListing {
   skills: string[];
   postedDate: string;
   applied: boolean;
+  matchedCount: number;
+  totalRequired: number;
 }
 
 const LOGO_COLORS = [
@@ -44,9 +46,20 @@ export const BrowseInternshipsView: React.FC = () => {
   const fetchListings = async () => {
     setIsLoading(true);
     setErrorMsg(null);
-    
-const { data: userData } = await supabase.auth.getUser();
-    
+
+    const { data: userData } = await supabase.auth.getUser();
+
+    // Fetch the logged-in student's own skills for real matching
+    let mySkills: string[] = [];
+    if (userData.user) {
+      const { data: profileData } = await supabase
+        .from('student_profiles')
+        .select('skills')
+        .eq('id', userData.user.id)
+        .single();
+      mySkills = (profileData?.skills || []).map((s: string) => s.toLowerCase());
+    }
+
     const { data, error } = await supabase
       .from('listings')
       .select('id, title, required_skills, location, created_at, companies(company_name)')
@@ -59,16 +72,16 @@ const { data: userData } = await supabase.auth.getUser();
       return;
     }
 
-  let appliedListingIds = new Set<string>();
-  if (userData.user) {
-    const { data: existingApps } = await supabase
-      .from('applications')
-      .select('listing_id')
-      .eq('student_id', userData.user.id);
+    let appliedListingIds = new Set<string>();
+    if (userData.user) {
+      const { data: existingApps } = await supabase
+        .from('applications')
+        .select('listing_id')
+        .eq('student_id', userData.user.id);
 
-    appliedListingIds = new Set((existingApps || []).map((a: any) => a.listing_id));
-  }
-    
+      appliedListingIds = new Set((existingApps || []).map((a: any) => a.listing_id));
+    }
+
     const mapped: RealListing[] = (data || []).map((row: any, idx: number) => {
       const companyName = row.companies?.company_name || 'Unknown Company';
       const initials = companyName
@@ -78,6 +91,11 @@ const { data: userData } = await supabase.auth.getUser();
         .slice(0, 2)
         .toUpperCase();
 
+      const requiredSkills: string[] = row.required_skills || [];
+      const matchedCount = requiredSkills.filter((skill) =>
+        mySkills.includes(skill.toLowerCase())
+      ).length;
+
       return {
         id: row.id,
         company: companyName,
@@ -85,11 +103,16 @@ const { data: userData } = await supabase.auth.getUser();
         companyLogoBg: LOGO_COLORS[idx % LOGO_COLORS.length],
         role: row.title,
         location: row.location || 'Not specified',
-        skills: row.required_skills || [],
+        skills: requiredSkills,
         postedDate: timeAgo(row.created_at),
         applied: appliedListingIds.has(row.id),
+        matchedCount,
+        totalRequired: requiredSkills.length,
       };
     });
+
+    // Sort by best skill match first
+    mapped.sort((a, b) => b.matchedCount - a.matchedCount);
 
     setInternships(mapped);
     setIsLoading(false);
@@ -212,12 +235,26 @@ const { data: userData } = await supabase.auth.getUser();
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 my-2.5">
-                  <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-slate-500" />
-                    {item.location}
-                  </span>
-                </div>
+                {item.totalRequired > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 my-2.5">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                        item.matchedCount === item.totalRequired
+                          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+                          : item.matchedCount > 0
+                          ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
+                          : 'bg-white/[0.03] text-slate-400 border-white/[0.08]'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {item.matchedCount} of {item.totalRequired} skills match
+                    </span>
+                    <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-slate-500" />
+                      {item.location}
+                    </span>
+                  </div>
+                )}
 
                 <div className="mt-3 pt-3 border-t border-white/[0.06]">
                   <div className="text-[11px] text-slate-400 mb-1.5">Required Skills:</div>
