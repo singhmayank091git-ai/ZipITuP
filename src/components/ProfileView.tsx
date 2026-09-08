@@ -1,21 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   User,
   Code2,
-  GraduationCap,
-  Mail,
-  ArrowRight,
   Pencil,
   X,
   Plus,
   CheckCircle2,
   Save,
-  Building
+  ArrowRight,
+  Loader2,
 } from 'lucide-react';
-import { STUDENT_PROFILE_DATA } from '../data/dashboardData';
 import { UserRole } from '../types';
 import { CompanyProfileView } from './CompanyProfileView';
+import { supabase } from '../lib/supabaseClient';
 
 interface ProfileViewProps {
   studentName?: string;
@@ -25,44 +23,72 @@ interface ProfileViewProps {
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
-  studentName: initialStudentName = STUDENT_PROFILE_DATA.name,
   userRole = 'student',
   companyName = 'TechCorp Labs',
   onUpdateName,
 }) => {
-  // If company role, delegate to CompanyProfileView
   if (userRole === 'company') {
     return <CompanyProfileView companyName={companyName} onUpdateName={onUpdateName} />;
   }
 
-  // Student Profile Local State
-  const [name, setName] = useState(initialStudentName);
-  const [major, setMajor] = useState(STUDENT_PROFILE_DATA.role);
-  const [university, setUniversity] = useState(STUDENT_PROFILE_DATA.university);
-  const [graduationYear, setGraduationYear] = useState(STUDENT_PROFILE_DATA.graduationYear);
-  const [skills, setSkills] = useState<string[]>([
-    'React',
-    'TypeScript',
-    'Tailwind CSS',
-    'Python',
-    'SQL',
-    'Data Structures',
-    'Node.js',
-    'REST APIs',
-    'Git',
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [major, setMajor] = useState('');
+  const [university, setUniversity] = useState('');
+  const [graduationYear, setGraduationYear] = useState('');
+  const [skills, setSkills] = useState<string[]>([]);
 
-  // Editing state
   const [isEditing, setIsEditing] = useState(false);
-  const [formName, setFormName] = useState(name);
-  const [formMajor, setFormMajor] = useState(major);
-  const [formUniversity, setFormUniversity] = useState(university);
-  const [formGraduationYear, setFormGraduationYear] = useState(graduationYear);
-  const [formSkills, setFormSkills] = useState<string[]>([...skills]);
+  const [formName, setFormName] = useState('');
+  const [formMajor, setFormMajor] = useState('');
+  const [formUniversity, setFormUniversity] = useState('');
+  const [formGraduationYear, setFormGraduationYear] = useState('');
+  const [formSkills, setFormSkills] = useState<string[]>([]);
   const [newSkillInput, setNewSkillInput] = useState('');
 
-  // Notification state
   const [showSavedNotification, setShowSavedNotification] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      setErrorMsg('Not logged in.');
+      setIsLoading(false);
+      return;
+    }
+
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', userData.user.id)
+      .single();
+
+    const { data: studentData, error } = await supabase
+      .from('student_profiles')
+      .select('major, university, graduation_year, skills')
+      .eq('id', userData.user.id)
+      .single();
+
+    if (error) {
+      setErrorMsg(error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setName(profileData?.full_name || 'Student');
+    setMajor(studentData?.major || '');
+    setUniversity(studentData?.university || '');
+    setGraduationYear(studentData?.graduation_year ? String(studentData.graduation_year) : '');
+    setSkills(studentData?.skills || []);
+    setIsLoading(false);
+  };
 
   const handleStartEdit = () => {
     setFormName(name);
@@ -91,12 +117,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setFormSkills(formSkills.filter((s) => s !== skillToRemove));
   };
 
-  const handleSaveChanges = (e: React.FormEvent) => {
+  const handleSaveChanges = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedName = formName.trim() || 'Alex Rivera';
-    const trimmedMajor = formMajor.trim() || 'Computer Science Major';
-    const trimmedUniversity = formUniversity.trim() || 'Riverside Institute of Technology';
-    const trimmedYear = formGraduationYear.trim() || '2027';
+    setErrorMsg(null);
+
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      setErrorMsg('Not logged in.');
+      return;
+    }
+
+    const trimmedName = formName.trim() || 'Student';
+    const trimmedMajor = formMajor.trim();
+    const trimmedUniversity = formUniversity.trim();
+    const trimmedYear = formGraduationYear.trim();
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ full_name: trimmedName })
+      .eq('id', userData.user.id);
+
+    const { error: studentError } = await supabase
+      .from('student_profiles')
+      .update({
+        major: trimmedMajor,
+        university: trimmedUniversity,
+        graduation_year: trimmedYear ? parseInt(trimmedYear, 10) : null,
+        skills: formSkills,
+      })
+      .eq('id', userData.user.id);
+
+    if (profileError || studentError) {
+      setErrorMsg((profileError || studentError)?.message || 'Failed to save.');
+      return;
+    }
 
     setName(trimmedName);
     setMajor(trimmedMajor);
@@ -110,14 +164,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     setIsEditing(false);
     setShowSavedNotification(true);
-    setTimeout(() => {
-      setShowSavedNotification(false);
-    }, 4000);
+    setTimeout(() => setShowSavedNotification(false), 4000);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span className="text-sm">Loading your profile...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" id="profile-page">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/[0.06]">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
@@ -152,7 +212,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* Saved Confirmation Banner */}
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
+          {errorMsg}
+        </div>
+      )}
+
       <AnimatePresence>
         {showSavedNotification && (
           <motion.div
@@ -176,7 +241,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Edit Form OR Display View */}
       {isEditing ? (
         <div className="rounded-2xl bg-[#0B0F1E]/80 backdrop-blur-xl border border-white/[0.08] p-6 sm:p-8 shadow-xl">
           <div className="flex items-center gap-2.5 pb-5 mb-6 border-b border-white/[0.06]">
@@ -193,7 +257,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
           <form onSubmit={handleSaveChanges} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Name */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Full Name
@@ -208,29 +271,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 />
               </div>
 
-              {/* Major */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Academic Major / Branch
                 </label>
                 <input
                   type="text"
-                  required
                   value={formMajor}
                   onChange={(e) => setFormMajor(e.target.value)}
-                  placeholder="e.g. Computer Science Major"
+                  placeholder="e.g. Computer Science"
                   className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 transition-all"
                 />
               </div>
 
-              {/* University */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   University / College
                 </label>
                 <input
                   type="text"
-                  required
                   value={formUniversity}
                   onChange={(e) => setFormUniversity(e.target.value)}
                   placeholder="e.g. Riverside Institute of Technology"
@@ -238,14 +297,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 />
               </div>
 
-              {/* Graduation Year */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Graduation Year
                 </label>
                 <input
                   type="text"
-                  required
                   value={formGraduationYear}
                   onChange={(e) => setFormGraduationYear(e.target.value)}
                   placeholder="e.g. 2027"
@@ -254,7 +311,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
-            {/* Skills Tag Manager */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Technical Skills (Add / Remove Tags)
@@ -263,7 +319,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 List the languages, frameworks, and core technical proficiencies you want employers to see.
               </p>
 
-              {/* Existing Skills Tags */}
               <div className="flex flex-wrap gap-2 mb-3 min-h-[40px] p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
                 {formSkills.length === 0 ? (
                   <span className="text-xs text-slate-500 italic">No skills added yet.</span>
@@ -287,7 +342,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
 
-              {/* Add New Skill Tag Input */}
               <div className="flex items-center gap-2 max-w-md">
                 <input
                   type="text"
@@ -313,7 +367,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
-            {/* Form Actions */}
             <div className="pt-5 border-t border-white/[0.06] flex items-center justify-end gap-3">
               <button
                 type="button"
@@ -335,7 +388,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Profile Summary Card */}
           <div className="lg:col-span-4 rounded-2xl bg-[#0B0F1E]/80 backdrop-blur-xl border border-white/[0.08] p-6 shadow-xl text-center flex flex-col items-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 p-0.5 mb-4 shadow-lg shadow-cyan-950/50">
               <div className="w-full h-full rounded-2xl bg-slate-950 flex items-center justify-center font-bold text-2xl text-white">
@@ -344,14 +396,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   .map((n) => n[0])
                   .join('')
                   .slice(0, 2)
-                  .toUpperCase() || 'AR'}
+                  .toUpperCase() || 'ST'}
               </div>
             </div>
 
             <h2 className="text-lg font-bold text-white">{name}</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {name.toLowerCase().replace(/\s+/g, '.')}@cs.riverside.edu
-            </p>
 
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mt-3">
               <User className="w-3.5 h-3.5" />
@@ -361,20 +410,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="w-full mt-6 pt-5 border-t border-white/[0.06] text-left space-y-3 text-xs">
               <div>
                 <span className="text-slate-400 block">Major:</span>
-                <span className="text-slate-200 font-semibold">{major}</span>
+                <span className="text-slate-200 font-semibold">{major || 'Not set'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">University:</span>
-                <span className="text-slate-200 font-semibold">{university}</span>
+                <span className="text-slate-200 font-semibold">{university || 'Not set'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Graduation:</span>
-                <span className="text-slate-200 font-semibold">{graduationYear}</span>
+                <span className="text-slate-200 font-semibold">{graduationYear || 'Not set'}</span>
               </div>
             </div>
           </div>
 
-          {/* Skills & Details */}
           <div className="lg:col-span-8 space-y-6">
             <div className="rounded-2xl bg-[#0B0F1E]/80 backdrop-blur-xl border border-white/[0.08] p-6 shadow-xl">
               <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
@@ -387,42 +435,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </span>
               </div>
 
-              {/* Simple Skill Tags / Pills */}
               <div className="flex flex-wrap gap-2.5 mt-5">
-                {skills.map((skill, index) => (
-                  <span
-                    key={index}
-                    className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium bg-white/[0.04] text-slate-200 border border-white/[0.08] hover:border-cyan-500/30 hover:bg-white/[0.06] transition-all shadow-sm"
-                  >
-                    {skill}
+                {skills.length === 0 ? (
+                  <span className="text-xs text-slate-500 italic">
+                    No skills added yet. Click "Edit Profile" to add some.
                   </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-[#0B0F1E]/80 backdrop-blur-xl border border-white/[0.08] p-6 shadow-xl">
-              <h3 className="text-base font-bold text-white mb-2">Complete Profile Milestones</h3>
-              <p className="text-xs text-slate-400 mb-4">
-                Complete these steps to finish your profile setup:
-              </p>
-
-              <div className="space-y-2.5">
-                {STUDENT_PROFILE_DATA.missingProfileItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-xs sm:text-sm"
-                  >
-                    <span className="text-slate-300">{item}</span>
-                    <button
-                      type="button"
-                      onClick={handleStartEdit}
-                      className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer flex items-center gap-1"
+                ) : (
+                  skills.map((skill, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium bg-white/[0.04] text-slate-200 border border-white/[0.08] hover:border-cyan-500/30 hover:bg-white/[0.06] transition-all shadow-sm"
                     >
-                      <span>Update</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      {skill}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           </div>
