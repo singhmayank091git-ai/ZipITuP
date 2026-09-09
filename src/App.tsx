@@ -246,12 +246,8 @@ export default function App() {
                           onNavigateTab={setActiveTab}
                         />
                       )}
-                      {activeTab === 'all-listings' && (
-                        <InstitutionAllListingsView
-                          listings={companyListings}
-                          onApproveListing={handleApproveListing}
-                          onRejectListing={handleRejectListing}
-                        />
+                                      {activeTab === 'all-listings' && (
+                        <InstitutionAllListingsView />
                       )}
                       {activeTab === 'students' && <InstitutionStudentsView />}
                       {activeTab === 'profile' && (
