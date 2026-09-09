@@ -238,9 +238,6 @@ export default function App() {
                       {activeTab === 'dashboard' && (
                         <InstitutionDashboardView
                           institutionName={institutionName}
-                          listings={companyListings}
-                          onApproveListing={handleApproveListing}
-                          onRejectListing={handleRejectListing}
                           onNavigateTab={setActiveTab}
                         />
                       )}
