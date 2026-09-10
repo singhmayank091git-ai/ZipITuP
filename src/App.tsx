@@ -269,7 +269,6 @@ export default function App() {
                           onNavigateToMyListings={() => setActiveTab('my-listings')}
                         />
                       )}
-                      {activeTab === 'my-listings' && (
                                       {activeTab === 'my-listings' && (
                         <MyListingsView
                           onNavigateToPost={() => setActiveTab('post-listing')}
