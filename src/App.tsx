@@ -283,10 +283,9 @@ export default function App() {
                           onUpdateName={(name) => setCompanyName(name)}
                         />
                       )}
-                      {activeTab === 'dashboard' && (
+                                       {activeTab === 'dashboard' && (
                         <CompanyDashboardView
                           companyName={companyName}
-                          listings={companyListings}
                           onNavigateTab={setActiveTab}
                         />
                       )}
