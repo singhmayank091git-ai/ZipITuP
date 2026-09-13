@@ -320,12 +320,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <span>Recommended For You</span>
-              <span className="text-xs font-normal text-slate-400 hidden sm:inline">
-                (Ranked by your real skill match)
-              </span>
-            </h2>
+          <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+  <span>{recommended.some(r => r.matchedCount > 0) ? 'Recommended For You' : 'Latest Opportunities'}</span>
+  <span className="text-xs font-normal text-slate-400 hidden sm:inline">
+    {recommended.some(r => r.matchedCount > 0)
+      ? '(Ranked by your real skill match)'
+      : '(Add skills to your profile to see personalized matches)'}
+  </span>
+</h2>
           </div>
 
           <button
